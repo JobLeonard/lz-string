@@ -16,10 +16,11 @@ var LZString = (function () {
     streamDataPosition,
     streamBitsPerChar,
     streamGetCharFromInt,
+    emptyString = '',
     reverseDict = {},
-    base = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+",
-    Base64CharArray = (base + "/=").split(''),
-    UriSafeCharArray = (base + "-$").split('');
+    base = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+',
+    Base64CharArray = (base + '/=').split(emptyString),
+    UriSafeCharArray = (base + '-$').split(emptyString);
   while (i < 65) {
     if (i > 62) {
       reverseDict[UriSafeCharArray[i].charCodeAt(0)] = i;
@@ -54,11 +55,13 @@ var LZString = (function () {
       streamDataPosition = 0;
       streamBitsPerChar = bitsPerChar;
       streamGetCharFromInt = getCharFromInt;
-      var j = 0, value = 0,
+      var j = 0,
+        value = 0,
         dictionary = {},
         freshNode = true,
         c = 0,
         node = _node(3), // first node will always be initialised like this.
+        getNextValue = uncompressed.charCodeAt.bind(uncompressed),
         nextNode,
         dictSize = 3,
         numBitsMask = 0b100;
@@ -70,30 +73,29 @@ var LZString = (function () {
         // as true, and new_node, node and dictSize as if
         // it was already added to the dictionary (see above).
 
-        c = uncompressed.charCodeAt(0);
+        c = getNextValue(0);
 
         // == Write first charCode token to output ==
 
         // 8 or 16 bit?
-        value = c < 256 ? 0 : 1
+        value = c < 0x100 ? 0 : 1;
 
         // insert "new 8/16 bit charCode" token
         // into bitstream (value 1)
         streamBits(value, numBitsMask);
-        streamBits(c, value ? 0b10000000000000000 : 0b100000000);
+        streamBits(c, value ? 0x10000 : 0x100);
 
         // Add charCode to the dictionary.
         dictionary[c] = node;
 
         for (j = 1; j < uncompressed.length; j++) {
-          c = uncompressed.charCodeAt(j);
+          c = getNextValue(j);
           // does the new charCode match an existing prefix?
           nextNode = node.d[c];
           if (nextNode) {
             // continue with next prefix
             node = nextNode;
           } else {
-
             // Prefix+charCode does not exist in trie yet.
             // We write the prefix to the bitstream, and add
             // the new charCode to the dictionary if it's new
@@ -118,20 +120,19 @@ var LZString = (function () {
                 numBitsMask <<= 1;
               }
 
-
               // insert "new 8/16 bit charCode" token,
               // see comments above for explanation
-              value = c < 256 ? 0 : 1
+              value = c < 0x100 ? 0 : 1;
               streamBits(value, numBitsMask);
-              streamBits(c, value ? 0b10000000000000000 : 0b100000000);
+              streamBits(c, value ? 0x10000 : 0x100);
 
-              dictionary[c] = _node(dictSize)
+              dictionary[c] = _node(dictSize);
               // Note of that we already wrote
               // the charCode token to the bitstream
               freshNode = true;
             }
             // add node representing prefix + new charCode to trie
-            node.d[c] = _node(++dictSize)
+            node.d[c] = _node(++dictSize);
             // increase token bitlength if necessary
             if (dictSize >= numBitsMask) {
               numBitsMask <<= 1;
@@ -160,9 +161,9 @@ var LZString = (function () {
 
           // insert "new 8/16 bit charCode" token,
           // see comments above for explanation
-          value = c < 256 ? 0 : 1
+          value = c < 0x100 ? 0 : 1;
           streamBits(value, numBitsMask);
-          streamBits(c, 0b100000000 << value);
+          streamBits(c, 0x100 << value);
         }
         // increase token bitlength if necessary
         if (++dictSize >= numBitsMask) {
@@ -177,51 +178,47 @@ var LZString = (function () {
       streamData.push(streamGetCharFromInt(streamDataVal));
     }
     return streamData;
-
   }
   function _decompress(length, resetBits, getNextValue) {
-    var dictionary = ['', '', ''],
+    var dictionary = [emptyString, emptyString, emptyString],
       enlargeIn = 4,
       dictSize = 4,
       numBits = 3,
-      entry = "",
+      entry = emptyString,
       result = [],
       bits = 0,
       maxpower = 2,
       power = 0,
-      c = "",
+      c = emptyString,
       data_val = getNextValue(0),
       data_position = resetBits,
       data_index = 1;
 
-    // Get first token, guaranteed to be either
-    // a new character token (8 or 16 bits)
-    // or end of stream token.
-    while (power != maxpower) {
-      // shifting has precedence over bitmasking
-      bits += (data_val >> --data_position & 1) << power++;
-      if (data_position == 0) {
-        data_position = resetBits;
-        data_val = getNextValue(data_index++);
+    function getBitStream() {
+      while (power != maxpower) {
+        // shifting has precedence over bitmasking
+        bits += ((data_val >> --data_position) & 1) << power++;
+        if (data_position == 0) {
+          data_position = resetBits;
+          data_val = getNextValue(data_index++);
+        }
       }
     }
 
+    // Get first token, guaranteed to be either
+    // a new character token (8 or 16 bits)
+    // or end of stream token.
+    getBitStream();
+
     // if end of stream token, return empty string
     if (bits == 2) {
-      return "";
+      return emptyString;
     }
 
     // else, get character
     maxpower = bits * 8 + 8;
     bits = power = 0;
-    while (power != maxpower) {
-      // shifting has precedence over bitmasking
-      bits += (data_val >> --data_position & 1) << power++;
-      if (data_position == 0) {
-        data_position = resetBits;
-        data_val = getNextValue(data_index++);
-      }
-    }
+    getBitStream();
     c = fromCharCode(bits);
     dictionary[3] = c;
     result.push(c);
@@ -242,7 +239,7 @@ var LZString = (function () {
 
       // 0 or 1 implies new character token
       if (bits < 2) {
-        maxpower = (8 + 8 * bits);
+        maxpower = 8 + 8 * bits;
         bits = power = 0;
         while (power != maxpower) {
           // shifting has precedence over bitmasking
@@ -259,7 +256,7 @@ var LZString = (function () {
         }
       } else if (bits == 2) {
         // end of stream token
-        return result.join('');
+        return result.join(emptyString);
       }
 
       if (bits > dictionary.length) {
@@ -275,47 +272,46 @@ var LZString = (function () {
       if (--enlargeIn == 0) {
         enlargeIn = 1 << numBits++;
       }
-
     }
-    return "";
+    return emptyString;
   }
   function _compressToArray(uncompressed) {
     return _compress(uncompressed, 16, fromCharCode);
   }
   function _decompressFromArray(compressed) {
-    if (compressed == null) return "";
+    if (compressed == null) return emptyString;
     if (compressed.length == 0) return null;
-    return _decompress(compressed.length, 16, function (index) { return compressed[index].charCodeAt(0); });
+    return _decompress( compressed.length, 16, compressed.charCodeAt.bind(compressed) );
   }
 
   return {
     compressToBase64: function (input) {
-      if (input == null) return "";
+      if (input == null) return emptyString;
       var res = _compress(input, 6, getCharFromBase64),
         i = res.length % 4; // To produce valid Base64
       while (i--) {
-        res.push("=");
+        res.push('=');
       }
 
-      return res.join('');
+      return res.join(emptyString);
     },
 
     decompressFromBase64: function (input) {
-      if (input == null) return "";
-      if (input == "") return null;
+      if (input == null) return emptyString;
+      if (input == emptyString) return null;
       return _decompress(input.length, 6, function (index) { return reverseDict[input.charCodeAt(index)]; });
     },
 
     compressToUTF16: function (input) {
-      if (input == null) return "";
+      if (input == null) return emptyString;
       var compressed = _compress(input, 15, getCharFromUTF16);
-      compressed.push(" ");
-      return compressed.join('');
+      compressed.push(' ');
+      return compressed.join(emptyString);
     },
 
     decompressFromUTF16: function (compressed) {
-      if (compressed == null) return "";
-      if (compressed == "") return null;
+      if (compressed == null) return emptyString;
+      if (compressed == emptyString) return null;
       return _decompress(compressed.length, 15, function (index) { return compressed.charCodeAt(index) - 32; });
     },
 
@@ -342,31 +338,30 @@ var LZString = (function () {
       return _decompress(compressed.length, 8, function (index) { return compressed[index]; });
     },
 
-
     //compress into a string that is already URI encoded
     compressToEncodedURIComponent: function (input) {
-      if (input == null) return "";
-      return _compress(input, 6, getCharFromURISafe).join('');
+      if (input == null) return emptyString;
+      return _compress(input, 6, getCharFromURISafe).join(emptyString);
     },
 
     //decompress from an output of compressToEncodedURIComponent
     decompressFromEncodedURIComponent: function (input) {
-      if (input == null) return "";
-      if (input == "") return null;
-      input = input.replace(/ /g, "+");
+      if (input == null) return emptyString;
+      if (input == emptyString) return null;
+      input = input.replace(/ /g, '+');
       return _decompress(input.length, 6, function (index) { return reverseDict[input.charCodeAt(index)]; });
     },
 
     compress: function (uncompressed) {
-      return _compressToArray(uncompressed).join('');
+      return _compressToArray(uncompressed).join(emptyString);
     },
 
     compressToArray: _compressToArray,
 
     decompress: function (compressed) {
-      if (compressed == null) return "";
-      if (compressed == "") return null;
-      return _decompress(compressed.length, 16, function (index) { return compressed.charCodeAt(index); });
+      if (compressed == null) return emptyString;
+      if (compressed == emptyString) return null;
+      return _decompress( compressed.length, 16, compressed.charCodeAt.bind(compressed) );
     },
 
     decompressFromArray: _decompressFromArray
@@ -376,10 +371,7 @@ var LZString = (function () {
 if (typeof define === 'function' && define.amd) {
   define(function () { return LZString; });
 } else if (typeof module !== 'undefined' && module != null) {
-  module.exports = LZString
+  module.exports = LZString;
 } else if (typeof angular !== 'undefined' && angular != null) {
-  angular.module('LZString', [])
-    .factory('LZString', function () {
-      return LZString;
-    });
+  angular.module('LZString', []).factory('LZString', function() { return LZString; });
 }
