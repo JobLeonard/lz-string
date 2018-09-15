@@ -87,8 +87,13 @@ var LZString = (function () {
 
         for (j = 1; j < uncompressed.length; j++) {
           c = uncompressed.charCodeAt(j);
-          // does the new charCode match an existing prefix?
-          nextNode = node.d[c];
+          // separate on comma leading to get gain while processing JSON!
+          if (c===44) {
+            nextNode=false;
+          } else {
+            // does the new charCode match an existing prefix?
+            nextNode = node.d[c];
+          }
           if (nextNode) {
             // continue with next prefix
             node = nextNode;
