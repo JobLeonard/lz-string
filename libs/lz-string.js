@@ -16,6 +16,7 @@ var LZString = (function () {
     streamDataPosition,
     streamBitsPerChar,
     streamGetCharFromInt,
+    breakCode=44, 
     reverseDict = {},
     base = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+",
     Base64CharArray = (base + "/=").split(''),
@@ -61,7 +62,8 @@ var LZString = (function () {
         node = _node(3), // first node will always be initialised like this.
         nextNode,
         dictSize = 3,
-        numBitsMask = 0b100;
+        numBitsMask = 0b100,
+        forceBreak=true;
 
       if (uncompressed.length) {
         // If there is a string, the first charCode is guaranteed to
@@ -87,8 +89,16 @@ var LZString = (function () {
 
         for (j = 1; j < uncompressed.length; j++) {
           c = uncompressed.charCodeAt(j);
-          // does the new charCode match an existing prefix?
-          nextNode = node.d[c];
+
+          // split Node at defined split symbol (do not split if the node starts with the symbol)
+          if (c===breakCode && forceBreak) {
+            nextNode=false;
+            forceBreak=false;
+          } else {
+            // does the new charCode match an existing prefix?
+            nextNode = node.d[c];
+          }
+
           if (nextNode) {
             // continue with next prefix
             node = nextNode;
@@ -99,6 +109,11 @@ var LZString = (function () {
             // the new charCode to the dictionary if it's new
             // Then we set node to the root node matching
             // the charCode.
+
+            // mark the node if it starts not with the split symbol
+            if (c!==breakCode) {
+              forceBreak=true;
+            }
 
             if (freshNode) {
               // Prefix is a freshly added character token,
@@ -369,7 +384,9 @@ var LZString = (function () {
       return _decompress(compressed.length, 16, function (index) { return compressed.charCodeAt(index); });
     },
 
-    decompressFromArray: _decompressFromArray
+    decompressFromArray: _decompressFromArray,
+    setBreakCode: function (a) { breakCode=a; },
+    getBreakCode: function () { return breakCode; }
   };
 })();
 
